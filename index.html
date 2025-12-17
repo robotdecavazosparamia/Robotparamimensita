@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Chebi Chess – Motor Avanzado</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{margin:0;background:#0f172a;color:#fff;font-family:system-ui,Arial;display:flex;justify-content:center}
+.app{max-width:420px;width:100%;padding:12px}
+h1{text-align:center;margin:8px 0}
+#board{display:grid;grid-template-columns:repeat(8,1fr);aspect-ratio:1/1;border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.8)}
+.square{display:flex;align-items:center;justify-content:center;font-size:34px;user-select:none}
+.dark{background:#475569}.light{background:#e5e7eb;color:#000}
+.selected{outline:3px solid #facc15}
+.info{text-align:center;margin-top:8px}
+button{width:100%;margin-top:8px;padding:10px;border:none;border-radius:10px;font-size:16px;background:#22c55e;color:#000;font-weight:700}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>♟️ Chebi Chess</h1>
+<div id="board"></div>
+<div class="info" id="info">Tu turno (Blancas)</div>
+<button onclick="resetGame()">Nueva partida</button>
+</div>
+
+<script>
+// ============================
+// CHEBI ENGINE (1600–1800 aprox)
+// ============================
+
+const P={r:"♜",n:"♞",b:"♝",q:"♛",k:"♚",p:"♟",R:"♖",N:"♘",B:"♗",Q:"♕",K:"♔",P:"♙"};
+const V={p:100,n:320,b:330,r:500,q:900,k:20000};
+let boardEl=document.getElementById('board');
+let info=document.getElementById('info');
+let selected=null;let turn='w';
+let board=[];
+
+function resetGame(){
+ board=[
+ ['r','n','b','q','k','b','n','r'],
+ ['p','p','p','p','p','p','p','p'],
+ ['','','','','','','',''],
+ ['','','','','','','',''],
+ ['','','','','','','',''],
+ ['','','','','','','',''],
+ ['P','P','P','P','P','P','P','P'],
+ ['R','N','B','Q','K','B','N','R']
+ ];
+ turn='w';selected=null;draw();
+}
+
+function draw(){
+ boardEl.innerHTML='';
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  let sq=document.createElement('div');
+  sq.className='square '+((r+c)%2?'dark':'light');
+  sq.textContent=P[board[r][c]]||'';
+  sq.onclick=()=>clickSquare(r,c,sq);
+  boardEl.appendChild(sq);
+ }
+ info.textContent=turn==='w'?'Tu turno (Blancas)':'Chebi pensando…';
+}
+
+function clickSquare(r,c,el){
+ if(turn!=='w')return;
+ let piece=board[r][c];
+ if(selected){
+  let [sr,sc]=selected;
+  if(isLegal(sr,sc,r,c)){
+    move(sr,sc,r,c);
+    turn='b';selected=null;draw();
+    setTimeout(aiMove,200);
+  } else {selected=null;draw();}
+  return;
+ }
+ if(piece && piece===piece.toUpperCase()){
+  selected=[r,c];el.classList.add('selected');
+ }
+}
+
+function move(sr,sc,r,c){board[r][c]=board[sr][sc];board[sr][sc]='';}
+
+function aiMove(){
+ let best=minimax(board,3,-1e9,1e9,true).move;
+ if(best){move(...best);}
+ turn='w';draw();
+}
+
+function minimax(b,d,a,beta,max){
+ if(d===0) return {score:evaluate(b)};
+ let moves=genMoves(b,max?'b':'w');
+ let bestMove=null;
+ if(max){
+  let maxEval=-1e9;
+  for(let m of moves){let nb=clone(b);apply(nb,m);
+   let e=minimax(nb,d-1,a,beta,false).score;
+   if(e>maxEval){maxEval=e;bestMove=m}
+   a=Math.max(a,e);if(beta<=a)break;
+  }
+  return {score:maxEval,move:bestMove};
+ } else {
+  let minEval=1e9;
+  for(let m of moves){let nb=clone(b);apply(nb,m);
+   let e=minimax(nb,d-1,a,beta,true).score;
+   if(e<minEval){minEval=e;bestMove=m}
+   beta=Math.min(beta,e);if(beta<=a)break;
+  }
+  return {score:minEval,move:bestMove};
+ }
+}
+
+function evaluate(b){
+ let s=0;
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  let p=b[r][c]; if(!p)continue;
+  let v=V[p.toLowerCase()];
+  s+=(p===p.toUpperCase()?v:-v);
+ }
+ return s;
+}
+
+function genMoves(b,color){
+ let m=[];
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  let p=b[r][c]; if(!p)continue;
+  if(color==='w' && p!==p.toUpperCase())continue;
+  if(color==='b' && p!==p.toLowerCase())continue;
+  for(let r2=0;r2<8;r2++)for(let c2=0;c2<8;c2++){
+   if(isLegalMove(b,r,c,r2,c2)) m.push([r,c,r2,c2]);
+  }
+ }
+ return m;
+}
+
+function isLegal(sr,sc,r,c){return isLegalMove(board,sr,sc,r,c)}
+
+function isLegalMove(b,sr,sc,r,c){
+ let p=b[sr][sc]; if(!p)return false;
+ let t=b[r][c];
+ if(t && (p===p.toUpperCase())==(t===t.toUpperCase()))return false;
+ let dr=r-sr,dc=c-sc,ad=Math.abs;
+ switch(p.toLowerCase()){
+  case'p':{
+   let d=p==='P'?-1:1;
+   if(dc===0&&dr===d&&!t)return true;
+   if(dc===0&&dr===2*d&&!t&&((sr===6&&p==='P')||(sr===1&&p==='p')))return true;
+   if(ad(dc)===1&&dr===d&&t)return true;return false}
+  case'r':return dr===0||dc===0;
+  case'b':return ad(dr)===ad(dc);
+  case'q':return dr===0||dc===0||ad(dr)===ad(dc);
+  case'n':return ad(dr)*ad(dc)===2;
+  case'k':return ad(dr)<=1&&ad(dc)<=1;
+ }
+ return false;
+}
+
+function clone(b){return b.map(r=>r.slice())}
+function apply(b,m){b[m[2]][m[3]]=b[m[0]][m[1]];b[m[0]][m[1]]=''}
+
+resetGame();
+</script>
+</body>
+</html>
